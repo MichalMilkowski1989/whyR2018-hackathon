@@ -45,6 +45,14 @@ This includes providing an understanding of the features a proper validation of 
 
 How does normalisation work?
 
+
+
+```{r}
+harddrive %>% select(date, serial_number, model, capacity_bytes, smart_1_raw, smart_1_normalized)
+
+```
+
+for serial_number == "WD-WMC4N2899475" for raw 0 normalized value is 200 instead of 100
 ```{r}
 harddrive %>% filter(serial_number == "WD-WMC4N2899475") %>% select(date, serial_number, model, capacity_bytes, smart_1_raw, smart_1_normalized)
 ```
@@ -130,23 +138,31 @@ cols <- missings[missings$nmiss == 0,1]
 # preprocessing time
 ```{r}
 harddrive2 <- as.data.frame(harddrive) %>% group_by(serial_number) %>% 
-  mutate(first_date = min(date), time = date - first_date)
+  mutate(first_date = min(date), time = date - first_date + 1) %>% ungroup()
 
 harddrive2$time <- harddrive2$time %>% as.numeric
 
 cols_int <- as.character(cols[sapply(harddrive2[,as.character(cols)], class) == 'integer'])
 
+cols_int <- setdiff(cols_int, "serial_number")
 ```
 
 ##### variance
 
 ```{r}
 variance <- harddrive2 %>% select(cols_int) %>% apply(2,var) 
+means <- harddrive2 %>% select(cols_int) %>% apply(2,mean) 
+
+var_to_mean <- variance/means
+```
+
+```{r}
+summary(variance)
 ```
 
 
 ```{r}
-cols_nonvar <- names(variance[variance!=0 & !is.na(variance)])
+cols_nonvar <- names(var_to_mean[var_to_mean>0.05 & !is.na(var_to_mean)])
 cols_nonvar
 ```
 
@@ -163,14 +179,16 @@ cols_nonnorm
 
 Benchmark different learners or tune the hyperparemeters to obtain a good predictive performance.
 
+### just one model
+
 ```{r}
 #install.packages("gbm")
 
 task = makeSurvTask(id = "hard", 
-                    data = harddrive2[,c('time','failure'cols_nonnorm)], 
+                    data = harddrive2[,c('time',cols_nonnorm)], 
                     target = c('time','failure'))
 
-lrn = makeLearner("surv.gbm", predict.type = 'response')
+lrn = makeLearner("surv.rpart", predict.type = 'response', maxdepth = 30)
 mod = train(lrn, task)
 ```
 
@@ -180,12 +198,14 @@ Take a look at the data
 mod$learner.model
 ```
 
+```{r}
+plot(mod$learner.model)
+text(mod$learner.model)
+```
+
 
 ```{r}
 pred = predict(mod, task = task)
-performance(pred, measures = list(mlr::auc))
-colnames(harddrive3)[apply(is.na(harddrive3), 2, any)]
-
 ```
 
 ## Interpret Results
