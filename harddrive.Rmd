@@ -1,0 +1,247 @@
+---
+title: "mlr harddrive survival use case"
+author: "Michał Miłkowski"
+date: "7/5/2018"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  cache = TRUE
+)
+library(mlr)
+library(dplyr)
+```
+
+## Introduction
+
+
+## Reading the dataset
+
+Read the dataset. You might want to downsample it for a faster analysis and only later use the full dataset.
+
+
+Load the data
+```{r}
+harddrive <- read.csv("./harddrive.csv")
+```
+
+
+## Exploration
+
+Get in touch with the features of the dataset.
+
+* Does the data have missing values? 
+* Categorical features?
+* Features that need preprocessing?
+
+In this chapter you are also supposed to give an insight to the data.
+
+
+Provide a thoughtful and insightful analysis of the machine learning problem you chose.
+This includes providing an understanding of the features a proper validation of the model that gives an reliable estimate of the prediction performance.
+
+How does normalisation work?
+
+```{r}
+harddrive %>% filter(serial_number == "WD-WMC4N2899475") %>% select(date, serial_number, model, capacity_bytes, smart_1_raw, smart_1_normalized)
+```
+
+```{r}
+harddrive %>% filter(serial_number == "WD-WMC4N2899475") %>% select(date, serial_number, model, capacity_bytes, smart_1_raw, smart_1_normalized)
+```
+
+Are there any duplicates?
+
+```{r}
+nrow(harddrive)
+```
+
+```{r}
+harddrive %>% select(date, serial_number) %>% unique() %>% nrow()
+```
+
+```{r}
+harddrive %>% group_by(date) %>% summarise(n = n(),
+                                           ndist = n_distinct(serial_number)) %>%   arrange(date) %>% filter(n != ndist)
+```
+
+```{r}
+harddrive$date <- as.Date(as.character(harddrive$date))
+```
+
+```{r}
+duplicated <- harddrive %>% filter(date %in% c(as.Date("2016-01-01"),as.Date("2016-04-01")))
+```
+
+Only those 2 dates have duplicated rows. Is that only duplicate or the data is different for the same serial number and date?
+```{r}
+duplicated %>% select(date, serial_number) %>% unique() %>% nrow()
+```
+
+```{r}
+duplicated %>%  unique() %>% nrow()
+```
+
+** All we need to do now is unique() **
+
+
+```{r}
+library(data.table)
+harddrive <- as.data.table(harddrive)
+```
+
+```{r}
+harddrive <- unique(harddrive)
+```
+
+
+# let's select the most common model
+```{r}
+most_common <- harddrive %>% group_by(model) %>% summarise(n = n()) %>% arrange(-n) %>% head(3)
+```
+
+```{r}
+harddrive <- harddrive[as.character(model) == "ST4000DM000"]
+```
+
+### types of variables
+
+```{r}
+str(harddrive)
+```
+## Missing values
+
+```{r}
+missings <- harddrive[, lapply(.SD, function(x) sum(is.na(x))), .SDcols = 1:95]
+```
+
+```{r}
+missings <- data.frame(col = names(missings),
+                      nmiss = t(missings))
+```
+
+```{r}
+cols <- missings[missings$nmiss == 0,1]
+```
+
+# preprocessing time
+```{r}
+harddrive2 <- as.data.frame(harddrive) %>% group_by(serial_number) %>% 
+  mutate(first_date = min(date), time = date - first_date)
+
+harddrive2$time <- harddrive2$time %>% as.numeric
+
+cols_int <- as.character(cols[sapply(harddrive2[,as.character(cols)], class) == 'integer'])
+
+```
+
+##### variance
+
+```{r}
+variance <- harddrive2 %>% select(cols_int) %>% apply(2,var) 
+```
+
+
+```{r}
+cols_nonvar <- names(variance[variance!=0 & !is.na(variance)])
+cols_nonvar
+```
+
+#### get rid of normalized
+```{r}
+cols_nonnorm <- setdiff(cols_nonvar,
+                        grep(pattern = "_normalized", cols_nonvar,value = TRUE)
+)
+cols_nonnorm
+```
+
+
+## Benchmark
+
+Benchmark different learners or tune the hyperparemeters to obtain a good predictive performance.
+
+```{r}
+#install.packages("gbm")
+
+task = makeSurvTask(id = "hard", 
+                    data = harddrive2[,c('time','failure'cols_nonnorm)], 
+                    target = c('time','failure'))
+
+lrn = makeLearner("surv.gbm", predict.type = 'response')
+mod = train(lrn, task)
+```
+
+Take a look at the data
+
+```{r}
+mod$learner.model
+```
+
+
+```{r}
+pred = predict(mod, task = task)
+performance(pred, measures = list(mlr::auc))
+colnames(harddrive3)[apply(is.na(harddrive3), 2, any)]
+
+```
+
+## Interpret Results
+
+Can you use the obtained model to get deeper insights about the relationship bettween the features and the label?
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
